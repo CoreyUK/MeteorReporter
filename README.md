@@ -1,6 +1,6 @@
 # Meteor Reporter
 
-Meteor Reporter is a RuneLite plugin for sharing crashed Shooting Star sightings with other plugin users.
+Meteor Reporter is a RuneLite plugin for sharing crashed Shooting Star sightings with other plugin users, and for scouting the stars that have not landed yet using player-owned house telescopes.
 
 ## Features
 

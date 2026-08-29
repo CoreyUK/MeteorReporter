@@ -54,8 +54,8 @@ import net.runelite.http.api.worlds.WorldType;
 @Slf4j
 @PluginDescriptor(
 	name = "Meteor Reporter",
-	description = "Share crashed-star worlds, tiers, and landing spots",
-	tags = {"meteor", "shooting", "star", "mining", "report"}
+	description = "Share crashed-star worlds, tiers, and landing spots, and scout stars yet to fall",
+	tags = {"meteor", "shooting", "star", "mining", "report", "scout", "telescope"}
 )
 public class MeteorReporterPlugin extends Plugin
 {
