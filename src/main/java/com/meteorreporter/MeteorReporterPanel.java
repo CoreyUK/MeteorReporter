@@ -9,10 +9,12 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.IntConsumer;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JLabel;
+import javax.swing.JButton;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import net.runelite.client.ui.ColorScheme;
@@ -23,9 +25,11 @@ class MeteorReporterPanel extends PluginPanel
 {
 	private final JPanel reports = new JPanel();
 	private final JLabel status = new JLabel("Shared reports are disabled", SwingConstants.CENTER);
+	private final IntConsumer hopHandler;
 
-	MeteorReporterPanel()
+	MeteorReporterPanel(IntConsumer hopHandler)
 	{
+		this.hopHandler = hopHandler;
 		setLayout(new BorderLayout(0, 8));
 		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 		JLabel title = new JLabel("Meteor Reporter");
@@ -91,19 +95,28 @@ class MeteorReporterPanel extends PluginPanel
 		card.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		card.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 		card.setMaximumSize(new Dimension(Integer.MAX_VALUE, report.getReporterName() == null ? 76 : 94));
+		JPanel headingRow = new JPanel(new BorderLayout());
+		headingRow.setOpaque(false);
 		JLabel heading = new JLabel("World " + report.getWorld() + "  |  Tier " + report.getTier());
 		heading.setForeground(Color.WHITE);
 		heading.setFont(FontManager.getRunescapeBoldFont());
+		JButton hop = new JButton("Hop");
+		hop.setToolTipText("Hop to World " + report.getWorld());
+		hop.setFocusable(false);
+		hop.addActionListener(event -> hopHandler.accept(report.getWorld()));
+		headingRow.add(heading, BorderLayout.CENTER);
+		headingRow.add(hop, BorderLayout.EAST);
 		JLabel spot = new JLabel("<html>" + escape(report.getSpot()) + "</html>");
 		spot.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		JLabel age = new JLabel(age(report.getUpdatedAt()));
 		age.setForeground(Color.GRAY);
-		card.add(heading);
+		card.add(headingRow);
 		card.add(spot);
 		if (report.getReporterName() != null && !report.getReporterName().isEmpty())
 		{
+			int count = report.getContributionCount();
 			JLabel reporter = new JLabel("Reported by " + escape(report.getReporterName())
-				+ " (" + report.getContributionCount() + ")");
+				+ " - " + count + (count == 1 ? " report" : " reports"));
 			reporter.setForeground(rankColor(report.getContributionCount()));
 			card.add(reporter);
 		}

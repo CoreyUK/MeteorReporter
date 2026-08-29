@@ -1,9 +1,6 @@
 package com.meteorreporter;
 
 import com.google.inject.Provides;
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -33,14 +30,21 @@ import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuEntryAdded;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.game.WorldService;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.util.ImageUtil;
+import net.runelite.client.util.WorldUtil;
+import net.runelite.http.api.worlds.World;
+import net.runelite.http.api.worlds.WorldResult;
+import net.runelite.http.api.worlds.WorldType;
 
 @Slf4j
 @PluginDescriptor(
@@ -58,6 +62,7 @@ public class MeteorReporterPlugin extends Plugin
 	@Inject private ClientToolbar clientToolbar;
 	@Inject private ScheduledExecutorService executor;
 	@Inject private ConfigManager configManager;
+	@Inject private WorldService worldService;
 
 	private final Map<WorldPoint, StarObservation> visibleStars = new HashMap<>();
 	private final Set<WorldPoint> pendingCompletion = new HashSet<>();
@@ -67,11 +72,13 @@ public class MeteorReporterPlugin extends Plugin
 	private MeteorReporterPanel panel;
 	private NavigationButton navigationButton;
 	private ScheduledFuture<?> refreshTask;
+	private net.runelite.api.World hopTarget;
+	private int hopAttempts;
 
 	@Override
 	protected void startUp()
 	{
-		panel = new MeteorReporterPanel();
+		panel = new MeteorReporterPanel(this::hopToWorld);
 		navigationButton = NavigationButton.builder()
 			.tooltip("Meteor Reporter")
 			.icon(createIcon())
@@ -96,6 +103,7 @@ public class MeteorReporterPlugin extends Plugin
 		reportedHere.clear();
 		completedHere.clear();
 		activeReportKeys.clear();
+		hopTarget = null;
 		if (navigationButton != null) clientToolbar.removeNavigation(navigationButton);
 		panel = null;
 		navigationButton = null;
@@ -141,6 +149,20 @@ public class MeteorReporterPlugin extends Plugin
 				completedHere.add(point);
 				reportClient.delete(createReport(point, 1), this::refreshReports,
 					error -> log.debug("Unable to delete completed meteor report: {}", error));
+			}
+		}
+		if (hopTarget != null)
+		{
+			if (client.getWidget(InterfaceID.Worldswitcher.BUTTONS) == null)
+			{
+				client.openWorldHopper();
+				if (++hopAttempts >= 3) hopTarget = null;
+			}
+			else
+			{
+				client.hopToWorld(hopTarget);
+				hopTarget = null;
+				hopAttempts = 0;
 			}
 		}
 	}
@@ -298,15 +320,28 @@ public class MeteorReporterPlugin extends Plugin
 
 	private static BufferedImage createIcon()
 	{
-		BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D graphics = image.createGraphics();
-		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		graphics.setColor(new Color(255, 200, 70));
-		int[] x = {8, 10, 15, 11, 13, 8, 3, 5, 1, 6};
-		int[] y = {0, 5, 5, 9, 15, 11, 15, 9, 5, 5};
-		graphics.fillPolygon(x, y, x.length);
-		graphics.dispose();
-		return image;
+		return ImageUtil.loadImageResource(MeteorReporterPlugin.class, "meteor.png");
+	}
+
+	private void hopToWorld(int worldId)
+	{
+		WorldResult result = worldService.getWorlds();
+		World target = result == null ? null : result.findWorld(worldId);
+		if (target == null || target.getPlayers() < 0 || target.getPlayers() >= 1950) return;
+		World current = result.findWorld(client.getWorld());
+		if (current != null && !current.getTypes().contains(WorldType.PVP) && target.getTypes().contains(WorldType.PVP)) return;
+		clientThread.invoke(() ->
+		{
+			net.runelite.api.World apiWorld = client.createWorld();
+			apiWorld.setActivity(target.getActivity());
+			apiWorld.setAddress(target.getAddress());
+			apiWorld.setId(target.getId());
+			apiWorld.setPlayerCount(target.getPlayers());
+			apiWorld.setLocation(target.getLocation());
+			apiWorld.setTypes(WorldUtil.toWorldTypes(target.getTypes()));
+			hopTarget = apiWorld;
+			hopAttempts = 0;
+		});
 	}
 
 	@Provides
