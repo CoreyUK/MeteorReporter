@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +70,8 @@ public class MeteorReporterPlugin extends Plugin
 	private final Set<WorldPoint> reportedHere = new HashSet<>();
 	private final Set<WorldPoint> completedHere = new HashSet<>();
 	private final Set<String> activeReportKeys = ConcurrentHashMap.newKeySet();
+	private final AtomicBoolean refreshInFlight = new AtomicBoolean();
+	private volatile int currentWorld;
 	private MeteorReporterPanel panel;
 	private NavigationButton navigationButton;
 	private ScheduledFuture<?> refreshTask;
@@ -86,6 +89,8 @@ public class MeteorReporterPlugin extends Plugin
 			.panel(panel)
 			.build();
 		clientToolbar.addNavigation(navigationButton);
+		// Enabling the plugin mid-session doesn't fire a game state change, so seed the world here.
+		clientThread.invoke(() -> currentWorld = client.getGameState() == GameState.LOGGED_IN ? client.getWorld() : 0);
 		restartRefreshTask();
 		log.debug("Meteor Reporter started");
 	}
@@ -103,6 +108,8 @@ public class MeteorReporterPlugin extends Plugin
 		reportedHere.clear();
 		completedHere.clear();
 		activeReportKeys.clear();
+		refreshInFlight.set(false);
+		currentWorld = 0;
 		hopTarget = null;
 		if (navigationButton != null) clientToolbar.removeNavigation(navigationButton);
 		panel = null;
@@ -189,8 +196,14 @@ public class MeteorReporterPlugin extends Plugin
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
 	{
+		if (event.getGameState() == GameState.LOGGED_IN)
+		{
+			currentWorld = client.getWorld();
+			return;
+		}
 		if (event.getGameState() == GameState.HOPPING || event.getGameState() == GameState.LOGIN_SCREEN)
 		{
+			currentWorld = 0;
 			visibleStars.clear();
 			pendingCompletion.clear();
 			reportedHere.clear();
@@ -267,15 +280,23 @@ public class MeteorReporterPlugin extends Plugin
 	private void refreshReports()
 	{
 		if (!config.sharingEnabled() || panel == null) return;
+		// Never stack requests - a slow or unreachable server would otherwise queue one every refresh.
+		if (!refreshInFlight.compareAndSet(false, true)) return;
+		int world = currentWorld;
 		SwingUtilities.invokeLater(panel::setLoading);
 		reportClient.list(
 			reports ->
 			{
+				refreshInFlight.set(false);
 				activeReportKeys.clear();
 				for (MeteorReport report : reports) activeReportKeys.add(reportKey(report.getWorld(), report.getX(), report.getY(), report.getPlane()));
-				SwingUtilities.invokeLater(() -> { if (panel != null) panel.setReports(reports); });
+				SwingUtilities.invokeLater(() -> { if (panel != null) panel.setReports(reports, world); });
 			},
-			error -> SwingUtilities.invokeLater(() -> { if (panel != null) panel.setError(error); }));
+			error ->
+			{
+				refreshInFlight.set(false);
+				SwingUtilities.invokeLater(() -> { if (panel != null) panel.setError(error); });
+			});
 	}
 
 	private String reporterId()
@@ -328,10 +349,17 @@ public class MeteorReporterPlugin extends Plugin
 		WorldResult result = worldService.getWorlds();
 		World target = result == null ? null : result.findWorld(worldId);
 		if (target == null || target.getPlayers() < 0 || target.getPlayers() >= 1950) return;
-		World current = result.findWorld(client.getWorld());
-		if (current != null && !current.getTypes().contains(WorldType.PVP) && target.getTypes().contains(WorldType.PVP)) return;
 		clientThread.invoke(() ->
 		{
+			// Game state and the current world can only be read on the client thread.
+			if (client.getGameState() != GameState.LOGGED_IN || client.getWorld() == worldId) return;
+			World current = result.findWorld(client.getWorld());
+			if (current != null && !current.getTypes().contains(WorldType.PVP) && target.getTypes().contains(WorldType.PVP))
+			{
+				client.addChatMessage(ChatMessageType.GAMEMESSAGE, "",
+					"Meteor Reporter will not hop you into PvP world " + worldId + ".", null);
+				return;
+			}
 			net.runelite.api.World apiWorld = client.createWorld();
 			apiWorld.setActivity(target.getActivity());
 			apiWorld.setAddress(target.getAddress());
