@@ -28,7 +28,7 @@ import net.runelite.client.ui.PluginPanel;
 class MeteorReporterPanel extends PluginPanel
 {
 	private static final int SPOT_WRAP_WIDTH = 160;
-	private static final int STALE_MINUTES = 15;
+	private static final int STALE_MINUTES = 7;
 	private static final int REFRESH_THROTTLE_MS = 5000;
 	private static final Color GOLD = new Color(255, 190, 45);
 	private static final Color PURPLE = new Color(180, 100, 255);
@@ -218,7 +218,7 @@ class MeteorReporterPanel extends PluginPanel
 		age.setForeground(Color.GRAY);
 		if (stale)
 		{
-			age.setToolTipText("Nobody has confirmed this star recently");
+			age.setToolTipText("Stars shrink a size every 7 minutes - this one may be smaller now");
 		}
 		footer.add(age, BorderLayout.EAST);
 

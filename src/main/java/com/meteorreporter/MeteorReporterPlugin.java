@@ -26,6 +26,7 @@ import net.runelite.api.MenuAction;
 import net.runelite.api.Tile;
 import net.runelite.api.TileObject;
 import net.runelite.api.WorldView;
+import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameObjectDespawned;
 import net.runelite.api.events.GameObjectSpawned;
@@ -58,6 +59,7 @@ import net.runelite.http.api.worlds.WorldType;
 public class MeteorReporterPlugin extends Plugin
 {
 	private static final int REFRESH_SECONDS = 30;
+	private static final int TIER_CHECK_TICKS = 5;
 	@Inject private Client client;
 	@Inject private ClientThread clientThread;
 	@Inject private MeteorReporterConfig config;
@@ -80,6 +82,7 @@ public class MeteorReporterPlugin extends Plugin
 	private ScheduledFuture<?> refreshTask;
 	private net.runelite.api.World hopTarget;
 	private int hopAttempts;
+	private int tierCheckTicks;
 
 	@Override
 	protected void startUp()
@@ -158,6 +161,11 @@ public class MeteorReporterPlugin extends Plugin
 					error -> log.debug("Unable to delete completed meteor report: {}", error));
 			}
 		}
+		if (++tierCheckTicks >= TIER_CHECK_TICKS)
+		{
+			tierCheckTicks = 0;
+			verifyStarTiers();
+		}
 		if (hopTarget != null)
 		{
 			if (client.getWidget(InterfaceID.Worldswitcher.BUTTONS) == null)
@@ -223,9 +231,56 @@ public class MeteorReporterPlugin extends Plugin
 		if (MeteorReporterConfig.GROUP.equals(event.getGroup())) restartRefreshTask();
 	}
 
+	/**
+	 * A star drops a size every seven minutes rather than when its layer is mined out, and that
+	 * change does not reliably arrive as a despawn and respawn, so re-read the tier from the scene.
+	 */
+	private void verifyStarTiers()
+	{
+		if (visibleStars.isEmpty() || client.getGameState() != GameState.LOGGED_IN) return;
+		WorldView worldView = client.getTopLevelWorldView();
+		if (worldView == null) return;
+		for (StarObservation star : new ArrayList<>(visibleStars.values()))
+		{
+			WorldPoint point = star.getWorldPoint();
+			int tier = tierAt(worldView, point);
+			if (tier < 0 || tier == star.getTier()) continue;
+			log.debug("Star at {} changed from tier {} to tier {}", point, star.getTier(), tier);
+			StarObservation updated = new StarObservation(point, tier);
+			visibleStars.put(point, updated);
+			if (reportedHere.contains(point) && config.sharingEnabled()) sendReport(updated, false);
+		}
+	}
+
+	private int tierAt(WorldView worldView, WorldPoint point)
+	{
+		LocalPoint local = LocalPoint.fromWorld(worldView, point);
+		Tile[][][] tiles = worldView.getScene().getTiles();
+		int plane = point.getPlane();
+		if (local == null || plane < 0 || plane >= tiles.length) return -1;
+		// A star reports one tile of its footprint, so sweep the tiles around it as well.
+		for (int x = local.getSceneX() - 1; x <= local.getSceneX() + 1; x++)
+		{
+			for (int y = local.getSceneY() - 1; y <= local.getSceneY() + 1; y++)
+			{
+				if (x < 0 || y < 0 || x >= tiles[plane].length || y >= tiles[plane][x].length) continue;
+				Tile tile = tiles[plane][x][y];
+				if (tile == null) continue;
+				for (GameObject object : tile.getGameObjects())
+				{
+					if (object == null || !point.equals(object.getWorldLocation())) continue;
+					int tier = StarTier.fromObjectId(object.getId());
+					if (tier > 0) return tier;
+				}
+			}
+		}
+		return -1;
+	}
+
 	private void sendReport(StarObservation star, boolean notify)
 	{
 		MeteorReport report = createReport(star.getWorldPoint(), star.getTier());
+		log.debug("Submitting world {} tier {} at {}", report.getWorld(), report.getTier(), report.getSpot());
 		reportClient.report(report, response -> clientThread.invoke(() ->
 		{
 			if (completedHere.contains(star.getWorldPoint()))
@@ -234,6 +289,8 @@ public class MeteorReporterPlugin extends Plugin
 					error -> log.debug("Unable to remove a report completed during submission: {}", error));
 				return;
 			}
+			log.debug("Report accepted for world {} tier {} (created={})", report.getWorld(), report.getTier(),
+				response != null && response.isCreated());
 			reportedHere.add(star.getWorldPoint());
 			StarObservation current = visibleStars.get(star.getWorldPoint());
 			if (current != null && current.getTier() != report.getTier())
