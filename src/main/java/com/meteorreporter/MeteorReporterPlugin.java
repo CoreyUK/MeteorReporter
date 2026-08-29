@@ -156,19 +156,28 @@ public class MeteorReporterPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
+		WorldView worldView = client.getTopLevelWorldView();
 		for (WorldPoint point : new ArrayList<>(pendingCompletion))
 		{
 			pendingCompletion.remove(point);
 			boolean witnessedCompletion = client.getGameState() == GameState.LOGGED_IN
 				&& client.getLocalPlayer() != null
 				&& client.getLocalPlayer().getWorldLocation().distanceTo(point) <= 32;
-			if (!visibleStars.containsKey(point) && witnessedCompletion && config.sharingEnabled())
+			if (visibleStars.containsKey(point) || !witnessedCompletion || !config.sharingEnabled()) continue;
+			// A star that shrinks is replaced, and the despawn can arrive after the respawn. Take a
+			// last look at the scene so a degrade is never mistaken for a completed star.
+			int tier = worldView == null ? -1 : tierAt(worldView, point);
+			if (tier > 0)
 			{
-				reportedHere.remove(point);
-				completedHere.add(point);
-				reportClient.delete(createReport(point, 1), this::refreshReports,
-					error -> log.debug("Unable to delete completed meteor report: {}", error));
+				StarObservation survivor = new StarObservation(point, tier);
+				visibleStars.put(point, survivor);
+				if (reportedHere.contains(point)) sendReport(survivor, false);
+				continue;
 			}
+			reportedHere.remove(point);
+			completedHere.add(point);
+			reportClient.delete(createReport(point, 1), this::refreshReports,
+				error -> log.debug("Unable to delete completed meteor report: {}", error));
 		}
 		if (++tierCheckTicks >= TIER_CHECK_TICKS)
 		{
@@ -259,7 +268,10 @@ public class MeteorReporterPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (MeteorReporterConfig.GROUP.equals(event.getGroup())) restartRefreshTask();
+		if (!MeteorReporterConfig.GROUP.equals(event.getGroup())) return;
+		// Give a server that has since gained the scouting endpoint another chance.
+		scoutsUnavailable = false;
+		restartRefreshTask();
 	}
 
 	/**
@@ -268,7 +280,7 @@ public class MeteorReporterPlugin extends Plugin
 	 */
 	private void verifyStarTiers()
 	{
-		if (visibleStars.isEmpty() || client.getGameState() != GameState.LOGGED_IN) return;
+		if (visibleStars.isEmpty()) return;
 		WorldView worldView = client.getTopLevelWorldView();
 		if (worldView == null) return;
 		for (StarObservation star : new ArrayList<>(visibleStars.values()))
@@ -391,7 +403,7 @@ public class MeteorReporterPlugin extends Plugin
 
 	private void requestRefresh()
 	{
-		executor.execute(this::refreshReports);
+		executor.execute(this::refreshAll);
 	}
 
 	private synchronized void restartRefreshTask()
@@ -404,7 +416,7 @@ public class MeteorReporterPlugin extends Plugin
 		}
 		// Only poll while the sidebar is open - nobody is looking at the list otherwise.
 		if (!panelActive) return;
-		refreshTask = executor.scheduleWithFixedDelay(this::refreshReports, 0,
+		refreshTask = executor.scheduleWithFixedDelay(this::refreshAll, 0,
 			REFRESH_SECONDS, TimeUnit.SECONDS);
 	}
 
@@ -444,6 +456,11 @@ public class MeteorReporterPlugin extends Plugin
 				refreshInFlight.set(false);
 				SwingUtilities.invokeLater(() -> { if (panel != null) panel.setError(error); });
 			});
+	}
+
+	private void refreshAll()
+	{
+		refreshReports();
 		refreshScouts();
 	}
 
