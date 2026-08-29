@@ -74,7 +74,7 @@ class MeteorReportClient
 		});
 	}
 
-	void report(MeteorReport report, Runnable success, Consumer<String> failure)
+	void report(MeteorReport report, Consumer<MeteorReportResponse> success, Consumer<String> failure)
 	{
 		HttpUrl url = reportsUrl();
 		if (url == null)
@@ -82,7 +82,34 @@ class MeteorReportClient
 			failure.accept("Invalid API URL");
 			return;
 		}
-		execute(requestBuilder(url).post(RequestBody.create(JSON, gson.toJson(report))).build(), success, failure);
+		Request request = requestBuilder(url).post(RequestBody.create(JSON, gson.toJson(report))).build();
+		httpClient.newCall(request).enqueue(new Callback()
+		{
+			@Override
+			public void onFailure(Call call, IOException exception)
+			{
+				log.debug("Meteor report request failed", exception);
+				failure.accept("Report server unavailable");
+			}
+
+			@Override
+			public void onResponse(Call call, Response response)
+			{
+				try (Response closeable = response)
+				{
+					if (!response.isSuccessful() || response.body() == null)
+					{
+						failure.accept("Report server returned " + response.code());
+						return;
+					}
+					success.accept(gson.fromJson(response.body().charStream(), MeteorReportResponse.class));
+				}
+				catch (RuntimeException exception)
+				{
+					failure.accept("Invalid report response");
+				}
+			}
+		});
 	}
 
 	void delete(MeteorReport report, Runnable success, Consumer<String> failure)

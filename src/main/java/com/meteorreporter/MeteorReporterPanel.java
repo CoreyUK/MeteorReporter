@@ -90,7 +90,7 @@ class MeteorReporterPanel extends PluginPanel
 		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
 		card.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		card.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-		card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 76));
+		card.setMaximumSize(new Dimension(Integer.MAX_VALUE, report.getReporterName() == null ? 76 : 94));
 		JLabel heading = new JLabel("World " + report.getWorld() + "  |  Tier " + report.getTier());
 		heading.setForeground(Color.WHITE);
 		heading.setFont(FontManager.getRunescapeBoldFont());
@@ -100,8 +100,24 @@ class MeteorReporterPanel extends PluginPanel
 		age.setForeground(Color.GRAY);
 		card.add(heading);
 		card.add(spot);
+		if (report.getReporterName() != null && !report.getReporterName().isEmpty())
+		{
+			JLabel reporter = new JLabel("Reported by " + escape(report.getReporterName())
+				+ " (" + report.getContributionCount() + ")");
+			reporter.setForeground(rankColor(report.getContributionCount()));
+			card.add(reporter);
+		}
 		card.add(age);
 		return card;
+	}
+
+	static Color rankColor(int reports)
+	{
+		if (reports >= 250) return new Color(255, 190, 45);
+		if (reports >= 100) return new Color(180, 100, 255);
+		if (reports >= 50) return new Color(80, 155, 255);
+		if (reports >= 20) return new Color(255, 85, 85);
+		return Color.LIGHT_GRAY;
 	}
 
 	private static String age(long timestamp)

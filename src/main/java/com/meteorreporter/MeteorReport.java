@@ -16,4 +16,7 @@ public class MeteorReport
 	private int plane;
 	private String spot;
 	private long updatedAt;
+	private String reporterId;
+	private String reporterName;
+	private int contributionCount;
 }

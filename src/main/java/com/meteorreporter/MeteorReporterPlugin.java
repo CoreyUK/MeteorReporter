@@ -11,6 +11,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -54,11 +56,13 @@ public class MeteorReporterPlugin extends Plugin
 	@Inject private MeteorReportClient reportClient;
 	@Inject private ClientToolbar clientToolbar;
 	@Inject private ScheduledExecutorService executor;
+	@Inject private ConfigManager configManager;
 
 	private final Map<WorldPoint, StarObservation> visibleStars = new HashMap<>();
 	private final Set<WorldPoint> pendingCompletion = new HashSet<>();
 	private final Set<WorldPoint> reportedHere = new HashSet<>();
 	private final Set<WorldPoint> completedHere = new HashSet<>();
+	private final Set<String> activeReportKeys = ConcurrentHashMap.newKeySet();
 	private MeteorReporterPanel panel;
 	private NavigationButton navigationButton;
 	private ScheduledFuture<?> refreshTask;
@@ -90,6 +94,7 @@ public class MeteorReporterPlugin extends Plugin
 		pendingCompletion.clear();
 		reportedHere.clear();
 		completedHere.clear();
+		activeReportKeys.clear();
 		if (navigationButton != null) clientToolbar.removeNavigation(navigationButton);
 		panel = null;
 		navigationButton = null;
@@ -150,6 +155,7 @@ public class MeteorReporterPlugin extends Plugin
 		if (object == null || StarTier.fromObjectId(object.getId()) < 0) return;
 		StarObservation observation = visibleStars.get(object.getWorldLocation());
 		if (observation == null) return;
+		if (reportedHere.contains(observation.getWorldPoint()) || activeReportKeys.contains(reportKey(client.getWorld(), observation.getWorldPoint()))) return;
 		client.getMenu().createMenuEntry(-1)
 			.setOption("Report")
 			.setTarget(event.getTarget())
@@ -166,6 +172,7 @@ public class MeteorReporterPlugin extends Plugin
 			pendingCompletion.clear();
 			reportedHere.clear();
 			completedHere.clear();
+			activeReportKeys.clear();
 		}
 	}
 
@@ -178,7 +185,7 @@ public class MeteorReporterPlugin extends Plugin
 	private void sendReport(StarObservation star, boolean notify)
 	{
 		MeteorReport report = createReport(star.getWorldPoint(), star.getTier());
-		reportClient.report(report, () -> clientThread.invoke(() ->
+		reportClient.report(report, response -> clientThread.invoke(() ->
 		{
 			if (completedHere.contains(star.getWorldPoint()))
 			{
@@ -194,8 +201,9 @@ public class MeteorReporterPlugin extends Plugin
 			}
 			if (notify)
 			{
+				String prefix = response != null && response.isCreated() ? "Reported" : "Already reported";
 				client.addChatMessage(ChatMessageType.GAMEMESSAGE, "",
-					"Reported World " + report.getWorld() + " Tier " + report.getTier() + " at " + report.getSpot() + ".", null);
+					prefix + " World " + report.getWorld() + " Tier " + report.getTier() + " at " + report.getSpot() + ".", null);
 			}
 			refreshReports();
 		}), error ->
@@ -210,8 +218,15 @@ public class MeteorReporterPlugin extends Plugin
 
 	private MeteorReport createReport(WorldPoint point, int tier)
 	{
+		String name = null;
+		String contributorId = null;
+		if (config.showReporterName() && client.getLocalPlayer() != null)
+		{
+			name = client.getLocalPlayer().getName();
+			contributorId = reporterId();
+		}
 		return new MeteorReport(client.getWorld(), tier, point.getX(), point.getY(), point.getPlane(),
-			StarSpot.forPoint(point), Instant.now().toEpochMilli());
+			StarSpot.forPoint(point), Instant.now().toEpochMilli(), contributorId, name, 0);
 	}
 
 	private void restartRefreshTask()
@@ -231,8 +246,43 @@ public class MeteorReporterPlugin extends Plugin
 		if (!config.sharingEnabled() || panel == null) return;
 		SwingUtilities.invokeLater(panel::setLoading);
 		reportClient.list(
-			reports -> SwingUtilities.invokeLater(() -> { if (panel != null) panel.setReports(reports); }),
+			reports ->
+			{
+				activeReportKeys.clear();
+				for (MeteorReport report : reports) activeReportKeys.add(reportKey(report.getWorld(), report.getX(), report.getY(), report.getPlane()));
+				SwingUtilities.invokeLater(() -> { if (panel != null) panel.setReports(reports); });
+			},
 			error -> SwingUtilities.invokeLater(() -> { if (panel != null) panel.setError(error); }));
+	}
+
+	private String reporterId()
+	{
+		String existing = configManager.getConfiguration(MeteorReporterConfig.GROUP, "reporterId");
+		if (existing != null)
+		{
+			try
+			{
+				UUID.fromString(existing);
+				return existing;
+			}
+			catch (IllegalArgumentException ignored)
+			{
+				// Replace malformed local identifiers.
+			}
+		}
+		String created = UUID.randomUUID().toString();
+		configManager.setConfiguration(MeteorReporterConfig.GROUP, "reporterId", created);
+		return created;
+	}
+
+	private static String reportKey(int world, WorldPoint point)
+	{
+		return reportKey(world, point.getX(), point.getY(), point.getPlane());
+	}
+
+	private static String reportKey(int world, int x, int y, int plane)
+	{
+		return world + ":" + x + ":" + y + ":" + plane;
 	}
 
 	private static TileObject findObject(Tile tile, int id)

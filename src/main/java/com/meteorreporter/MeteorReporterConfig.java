@@ -22,6 +22,17 @@ public interface MeteorReporterConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(
+		keyName = "showReporterName",
+		name = "Show my IGN",
+		description = "Shows your RuneScape name on meteor reports",
+		warning = "This sends your RuneScape name, meteor report data, and IP address to a 3rd-party server not controlled or verified by RuneLite developers"
+	)
+	default boolean showReporterName()
+	{
+		return false;
+	}
+
 	@ConfigItem(keyName = "apiEndpoint", name = "API endpoint", description = "Base URL of the Meteor Reporter API")
 	default String apiEndpoint()
 	{
