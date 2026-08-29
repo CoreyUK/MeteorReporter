@@ -176,7 +176,7 @@ public class MeteorReporterPlugin extends Plugin
 			}
 			reportedHere.remove(point);
 			completedHere.add(point);
-			reportClient.delete(createReport(point, 1), this::refreshReports,
+			reportClient.delete(createReport(point, 1), () -> refreshReports(true),
 				error -> log.debug("Unable to delete completed meteor report: {}", error));
 		}
 		if (++tierCheckTicks >= TIER_CHECK_TICKS)
@@ -328,7 +328,7 @@ public class MeteorReporterPlugin extends Plugin
 		{
 			if (completedHere.contains(star.getWorldPoint()))
 			{
-				reportClient.delete(report, this::refreshReports,
+				reportClient.delete(report, () -> refreshReports(true),
 					error -> log.debug("Unable to remove a report completed during submission: {}", error));
 				return;
 			}
@@ -346,7 +346,7 @@ public class MeteorReporterPlugin extends Plugin
 				client.addChatMessage(ChatMessageType.GAMEMESSAGE, "",
 					prefix + " World " + report.getWorld() + " Tier " + report.getTier() + " at " + report.getSpot() + ".", null);
 			}
-			refreshReports();
+			refreshReports(true);
 		}), error ->
 		{
 			if (notify)
@@ -431,13 +431,23 @@ public class MeteorReporterPlugin extends Plugin
 
 	private void refreshReports()
 	{
+		refreshReports(false);
+	}
+
+	/**
+	 * @param fresh true after this client changed something. Such a refresh is never dropped for a
+	 *              refresh already running, and asks any cache in front of the server to stand
+	 *              aside, so a report shows up in the panel the moment it is made.
+	 */
+	private void refreshReports(boolean fresh)
+	{
 		if (!config.sharingEnabled() || panel == null) return;
 		// Never stack requests - a slow or unreachable server would otherwise queue one every refresh.
-		if (!refreshInFlight.compareAndSet(false, true)) return;
+		if (!refreshInFlight.compareAndSet(false, true) && !fresh) return;
 		int world = currentWorld;
 		int minimumTier = config.minimumTier();
 		SwingUtilities.invokeLater(panel::setLoading);
-		reportClient.list(
+		reportClient.list(fresh,
 			reports ->
 			{
 				refreshInFlight.set(false);

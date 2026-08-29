@@ -40,7 +40,18 @@ class MeteorReportClient
 
 	void list(Consumer<List<MeteorReport>> success, Consumer<String> failure)
 	{
-		httpClient.newCall(new Request.Builder().url(REPORTS_URL).get().build()).enqueue(new Callback()
+		list(false, success, failure);
+	}
+
+	/**
+	 * @param fresh asks any cache between here and the server to fetch a new copy, for the moment
+	 *              right after this client reported something.
+	 */
+	void list(boolean fresh, Consumer<List<MeteorReport>> success, Consumer<String> failure)
+	{
+		Request.Builder builder = new Request.Builder().url(REPORTS_URL).get();
+		if (fresh) builder.header("Cache-Control", "no-cache");
+		httpClient.newCall(builder.build()).enqueue(new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException exception)
