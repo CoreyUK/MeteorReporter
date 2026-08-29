@@ -33,18 +33,6 @@ public interface MeteorReporterConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "apiEndpoint", name = "API endpoint", description = "Base URL of the Meteor Reporter API")
-	default String apiEndpoint()
-	{
-		return "https://meteors.cukservers.net/api/v1";
-	}
-
-	@ConfigItem(keyName = "sharedKey", name = "Shared key", description = "Optional key required by a private report server", secret = true)
-	default String sharedKey()
-	{
-		return "";
-	}
-
 	@Range(min = 10, max = 300)
 	@Units(Units.SECONDS)
 	@ConfigItem(keyName = "refreshSeconds", name = "Refresh interval", description = "How often to refresh the shared report list")

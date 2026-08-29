@@ -21,18 +21,17 @@ import okhttp3.Response;
 @Slf4j
 class MeteorReportClient
 {
+	private static final String API_ENDPOINT = "https://meteors.cukservers.net/api/v1";
 	private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 	private static final Type REPORT_LIST = new TypeToken<List<MeteorReport>>() { }.getType();
 	private final OkHttpClient httpClient;
 	private final Gson gson;
-	private final MeteorReporterConfig config;
 
 	@Inject
-	MeteorReportClient(OkHttpClient httpClient, Gson gson, MeteorReporterConfig config)
+	MeteorReportClient(OkHttpClient httpClient, Gson gson)
 	{
 		this.httpClient = httpClient;
 		this.gson = gson;
-		this.config = config;
 	}
 
 	void list(Consumer<List<MeteorReport>> success, Consumer<String> failure)
@@ -154,15 +153,11 @@ class MeteorReportClient
 
 	private Request.Builder requestBuilder(HttpUrl url)
 	{
-		Request.Builder builder = new Request.Builder().url(url);
-		String key = config.sharedKey().trim();
-		if (!key.isEmpty()) builder.header("X-Meteor-Key", key);
-		return builder;
+		return new Request.Builder().url(url);
 	}
 
 	private HttpUrl reportsUrl()
 	{
-		String endpoint = config.apiEndpoint().trim().replaceAll("/+$", "");
-		return HttpUrl.parse(endpoint + "/reports");
+		return HttpUrl.parse(API_ENDPOINT + "/reports");
 	}
 }
