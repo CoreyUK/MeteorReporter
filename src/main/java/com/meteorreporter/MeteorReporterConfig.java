@@ -3,8 +3,6 @@ package com.meteorreporter;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
-import net.runelite.client.config.Range;
-import net.runelite.client.config.Units;
 
 @ConfigGroup(MeteorReporterConfig.GROUP)
 public interface MeteorReporterConfig extends Config
@@ -33,11 +31,4 @@ public interface MeteorReporterConfig extends Config
 		return false;
 	}
 
-	@Range(min = 10, max = 300)
-	@Units(Units.SECONDS)
-	@ConfigItem(keyName = "refreshSeconds", name = "Refresh interval", description = "How often to refresh the shared report list")
-	default int refreshSeconds()
-	{
-		return 30;
-	}
 }

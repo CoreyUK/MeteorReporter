@@ -50,6 +50,7 @@ import net.runelite.client.ui.NavigationButton;
 )
 public class MeteorReporterPlugin extends Plugin
 {
+	private static final int REFRESH_SECONDS = 30;
 	@Inject private Client client;
 	@Inject private ClientThread clientThread;
 	@Inject private MeteorReporterConfig config;
@@ -238,7 +239,7 @@ public class MeteorReporterPlugin extends Plugin
 			return;
 		}
 		refreshTask = executor.scheduleWithFixedDelay(this::refreshReports, 0,
-			Math.max(10, config.refreshSeconds()), TimeUnit.SECONDS);
+			REFRESH_SECONDS, TimeUnit.SECONDS);
 	}
 
 	private void refreshReports()
