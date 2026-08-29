@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -32,6 +33,7 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -72,6 +74,7 @@ public class MeteorReporterPlugin extends Plugin
 	private final Set<String> activeReportKeys = ConcurrentHashMap.newKeySet();
 	private final AtomicBoolean refreshInFlight = new AtomicBoolean();
 	private volatile int currentWorld;
+	private volatile boolean panelActive;
 	private MeteorReporterPanel panel;
 	private NavigationButton navigationButton;
 	private ScheduledFuture<?> refreshTask;
@@ -81,7 +84,7 @@ public class MeteorReporterPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new MeteorReporterPanel(this::hopToWorld);
+		panel = new MeteorReporterPanel(this::hopToWorld, this::requestRefresh, this::setPanelActive);
 		navigationButton = NavigationButton.builder()
 			.tooltip("Meteor Reporter")
 			.icon(createIcon())
@@ -98,11 +101,8 @@ public class MeteorReporterPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
-		if (refreshTask != null)
-		{
-			refreshTask.cancel(true);
-			refreshTask = null;
-		}
+		stopRefreshTask();
+		panelActive = false;
 		visibleStars.clear();
 		pendingCompletion.clear();
 		reportedHere.clear();
@@ -163,7 +163,12 @@ public class MeteorReporterPlugin extends Plugin
 			if (client.getWidget(InterfaceID.Worldswitcher.BUTTONS) == null)
 			{
 				client.openWorldHopper();
-				if (++hopAttempts >= 3) hopTarget = null;
+				if (++hopAttempts >= 3)
+				{
+					hopTarget = null;
+					hopAttempts = 0;
+					gameMessage("Meteor Reporter could not open the world hopper.");
+				}
 			}
 			else
 			{
@@ -265,16 +270,39 @@ public class MeteorReporterPlugin extends Plugin
 			StarSpot.forPoint(point), Instant.now().toEpochMilli(), contributorId, name, 0);
 	}
 
-	private void restartRefreshTask()
+	private void setPanelActive(boolean active)
 	{
-		if (refreshTask != null) refreshTask.cancel(false);
+		panelActive = active;
+		if (active) restartRefreshTask();
+		else stopRefreshTask();
+	}
+
+	private void requestRefresh()
+	{
+		executor.execute(this::refreshReports);
+	}
+
+	private synchronized void restartRefreshTask()
+	{
+		stopRefreshTask();
 		if (!config.sharingEnabled())
 		{
 			if (panel != null) SwingUtilities.invokeLater(panel::setDisabled);
 			return;
 		}
+		// Only poll while the sidebar is open - nobody is looking at the list otherwise.
+		if (!panelActive) return;
 		refreshTask = executor.scheduleWithFixedDelay(this::refreshReports, 0,
 			REFRESH_SECONDS, TimeUnit.SECONDS);
+	}
+
+	private synchronized void stopRefreshTask()
+	{
+		if (refreshTask != null)
+		{
+			refreshTask.cancel(false);
+			refreshTask = null;
+		}
 	}
 
 	private void refreshReports()
@@ -283,14 +311,21 @@ public class MeteorReporterPlugin extends Plugin
 		// Never stack requests - a slow or unreachable server would otherwise queue one every refresh.
 		if (!refreshInFlight.compareAndSet(false, true)) return;
 		int world = currentWorld;
+		int minimumTier = config.minimumTier();
 		SwingUtilities.invokeLater(panel::setLoading);
 		reportClient.list(
 			reports ->
 			{
 				refreshInFlight.set(false);
 				activeReportKeys.clear();
-				for (MeteorReport report : reports) activeReportKeys.add(reportKey(report.getWorld(), report.getX(), report.getY(), report.getPlane()));
-				SwingUtilities.invokeLater(() -> { if (panel != null) panel.setReports(reports, world); });
+				List<MeteorReport> visible = new ArrayList<>();
+				for (MeteorReport report : reports)
+				{
+					activeReportKeys.add(reportKey(report.getWorld(), report.getX(), report.getY(), report.getPlane()));
+					if (report.getTier() >= minimumTier) visible.add(report);
+				}
+				int hidden = reports.size() - visible.size();
+				SwingUtilities.invokeLater(() -> { if (panel != null) panel.setReports(visible, world, hidden); });
 			},
 			error ->
 			{
@@ -317,6 +352,11 @@ public class MeteorReporterPlugin extends Plugin
 		String created = UUID.randomUUID().toString();
 		configManager.setConfiguration(MeteorReporterConfig.GROUP, "reporterId", created);
 		return created;
+	}
+
+	private void gameMessage(String message)
+	{
+		client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", message, null);
 	}
 
 	private static String reportKey(int world, WorldPoint point)
@@ -356,8 +396,13 @@ public class MeteorReporterPlugin extends Plugin
 			World current = result.findWorld(client.getWorld());
 			if (current != null && !current.getTypes().contains(WorldType.PVP) && target.getTypes().contains(WorldType.PVP))
 			{
-				client.addChatMessage(ChatMessageType.GAMEMESSAGE, "",
-					"Meteor Reporter will not hop you into PvP world " + worldId + ".", null);
+				gameMessage("Meteor Reporter will not hop you into PvP world " + worldId + ".");
+				return;
+			}
+			// ACCOUNT_CREDIT holds the days of membership left, so zero means a free account.
+			if (target.getTypes().contains(WorldType.MEMBERS) && client.getVarpValue(VarPlayerID.ACCOUNT_CREDIT) <= 0)
+			{
+				gameMessage("World " + worldId + " is members only.");
 				return;
 			}
 			net.runelite.api.World apiWorld = client.createWorld();

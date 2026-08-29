@@ -10,6 +10,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -19,6 +20,7 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
+import javax.swing.Timer;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
@@ -26,6 +28,8 @@ import net.runelite.client.ui.PluginPanel;
 class MeteorReporterPanel extends PluginPanel
 {
 	private static final int SPOT_WRAP_WIDTH = 160;
+	private static final int STALE_MINUTES = 15;
+	private static final int REFRESH_THROTTLE_MS = 5000;
 	private static final Color GOLD = new Color(255, 190, 45);
 	private static final Color PURPLE = new Color(180, 100, 255);
 	private static final Color BLUE = new Color(80, 155, 255);
@@ -34,19 +38,34 @@ class MeteorReporterPanel extends PluginPanel
 
 	private final JPanel reports = new JPanel();
 	private final JLabel status = new JLabel("Shared reports are disabled", SwingConstants.CENTER);
+	private final JButton refresh = new JButton("Refresh");
 	private final IntConsumer hopHandler;
+	private final Runnable refreshHandler;
+	private final Consumer<Boolean> activeHandler;
 	private boolean showingReports;
 
-	MeteorReporterPanel(IntConsumer hopHandler)
+	MeteorReporterPanel(IntConsumer hopHandler, Runnable refreshHandler, Consumer<Boolean> activeHandler)
 	{
 		this.hopHandler = hopHandler;
+		this.refreshHandler = refreshHandler;
+		this.activeHandler = activeHandler;
 		setLayout(new BorderLayout(0, 8));
 		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
 		JLabel title = new JLabel("Meteor Reporter");
 		title.setFont(FontManager.getRunescapeBoldFont().deriveFont(Font.PLAIN, 18f));
 		title.setForeground(Color.WHITE);
-		add(title, BorderLayout.NORTH);
+		refresh.setFont(FontManager.getRunescapeSmallFont());
+		refresh.setToolTipText("Refresh now");
+		refresh.setFocusable(false);
+		refresh.setMargin(new Insets(0, 0, 0, 0));
+		refresh.setPreferredSize(new Dimension(56, 20));
+		refresh.addActionListener(event -> requestRefresh());
+		JPanel header = new JPanel(new BorderLayout(6, 0));
+		header.setOpaque(false);
+		header.add(title, BorderLayout.CENTER);
+		header.add(refresh, BorderLayout.EAST);
+		add(header, BorderLayout.NORTH);
 
 		reports.setLayout(new BoxLayout(reports, BoxLayout.Y_AXIS));
 		reports.setOpaque(false);
@@ -61,6 +80,18 @@ class MeteorReporterPanel extends PluginPanel
 		status.setForeground(Color.LIGHT_GRAY);
 		status.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 		add(status, BorderLayout.SOUTH);
+	}
+
+	@Override
+	public void onActivate()
+	{
+		activeHandler.accept(true);
+	}
+
+	@Override
+	public void onDeactivate()
+	{
+		activeHandler.accept(false);
 	}
 
 	void setDisabled()
@@ -86,7 +117,7 @@ class MeteorReporterPanel extends PluginPanel
 		status.setText(message);
 	}
 
-	void setReports(List<MeteorReport> incoming, int currentWorld)
+	void setReports(List<MeteorReport> incoming, int currentWorld, int hidden)
 	{
 		List<MeteorReport> sorted = incoming == null ? new ArrayList<>() : new ArrayList<>(incoming);
 		sorted.sort(Comparator.comparingInt(MeteorReport::getTier).reversed()
@@ -94,7 +125,8 @@ class MeteorReporterPanel extends PluginPanel
 		reports.removeAll();
 		if (sorted.isEmpty())
 		{
-			JLabel empty = new JLabel("No active reports", SwingConstants.CENTER);
+			JLabel empty = new JLabel(hidden > 0 ? "No reports match your tier filter" : "No active reports",
+				SwingConstants.CENTER);
 			empty.setForeground(Color.LIGHT_GRAY);
 			empty.setAlignmentX(CENTER_ALIGNMENT);
 			reports.add(Box.createVerticalStrut(12));
@@ -112,20 +144,33 @@ class MeteorReporterPanel extends PluginPanel
 			}
 		}
 		showingReports = !sorted.isEmpty();
-		status.setText(sorted.size() + (sorted.size() == 1 ? " active report" : " active reports"));
+		String summary = sorted.size() + (sorted.size() == 1 ? " active report" : " active reports");
+		status.setText(hidden > 0 ? summary + " · " + hidden + " hidden" : summary);
 		revalidate();
 		repaint();
+	}
+
+	private void requestRefresh()
+	{
+		// Throttle manual refreshes so the button cannot be used to hammer the report server.
+		refresh.setEnabled(false);
+		Timer unlock = new Timer(REFRESH_THROTTLE_MS, event -> refresh.setEnabled(true));
+		unlock.setRepeats(false);
+		unlock.start();
+		refreshHandler.run();
 	}
 
 	private JPanel createReport(MeteorReport report, int currentWorld)
 	{
 		boolean here = currentWorld > 0 && currentWorld == report.getWorld();
-		Color tierColor = tierColor(report.getTier());
+		long minutes = ageMinutes(report.getUpdatedAt());
+		boolean stale = minutes >= STALE_MINUTES;
+		Color accent = stale ? tierColor(report.getTier()).darker().darker() : tierColor(report.getTier());
 
 		JPanel card = new JPanel(new BorderLayout(0, 3));
 		card.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		card.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createMatteBorder(0, 3, 0, 0, tierColor),
+			BorderFactory.createMatteBorder(0, 3, 0, 0, accent),
 			BorderFactory.createEmptyBorder(6, 7, 6, 7)));
 		card.setAlignmentX(LEFT_ALIGNMENT);
 
@@ -133,16 +178,16 @@ class MeteorReporterPanel extends PluginPanel
 		header.setOpaque(false);
 		JLabel world = new JLabel("World " + report.getWorld());
 		world.setFont(FontManager.getRunescapeBoldFont());
-		world.setForeground(Color.WHITE);
+		world.setForeground(stale ? ColorScheme.LIGHT_GRAY_COLOR : Color.WHITE);
 		JLabel tier = new JLabel("Tier " + report.getTier());
 		tier.setFont(FontManager.getRunescapeSmallFont());
-		tier.setForeground(tierColor);
+		tier.setForeground(accent);
 		header.add(world, BorderLayout.WEST);
 		header.add(tier, BorderLayout.CENTER);
 		header.add(worldAction(report.getWorld(), here), BorderLayout.EAST);
 
 		JLabel spot = new JLabel("<html><div width=" + SPOT_WRAP_WIDTH + ">" + escape(report.getSpot()) + "</div></html>");
-		spot.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		spot.setForeground(stale ? Color.GRAY : ColorScheme.LIGHT_GRAY_COLOR);
 
 		JPanel footer = new JPanel(new BorderLayout(6, 0));
 		footer.setOpaque(false);
@@ -155,7 +200,7 @@ class MeteorReporterPanel extends PluginPanel
 			credit.setOpaque(false);
 			JLabel name = new JLabel(escape(reporter));
 			name.setFont(FontManager.getRunescapeSmallFont());
-			name.setForeground(rankColor(count));
+			name.setForeground(stale ? Color.GRAY : rankColor(count));
 			name.setToolTipText(count + (count == 1 ? " report" : " reports") + " shared");
 			credit.add(name);
 			if (count > 0)
@@ -168,9 +213,13 @@ class MeteorReporterPanel extends PluginPanel
 			}
 			footer.add(credit, BorderLayout.WEST);
 		}
-		JLabel age = new JLabel(age(report.getUpdatedAt()));
+		JLabel age = new JLabel(age(minutes));
 		age.setFont(FontManager.getRunescapeSmallFont());
 		age.setForeground(Color.GRAY);
+		if (stale)
+		{
+			age.setToolTipText("Nobody has confirmed this star recently");
+		}
 		footer.add(age, BorderLayout.EAST);
 
 		card.add(header, BorderLayout.NORTH);
@@ -219,9 +268,13 @@ class MeteorReporterPanel extends PluginPanel
 		return Color.LIGHT_GRAY;
 	}
 
-	private static String age(long timestamp)
+	private static long ageMinutes(long timestamp)
 	{
-		long minutes = Math.max(0, ChronoUnit.MINUTES.between(Instant.ofEpochMilli(timestamp), Instant.now()));
+		return Math.max(0, ChronoUnit.MINUTES.between(Instant.ofEpochMilli(timestamp), Instant.now()));
+	}
+
+	private static String age(long minutes)
+	{
 		if (minutes < 1)
 		{
 			return "just now";

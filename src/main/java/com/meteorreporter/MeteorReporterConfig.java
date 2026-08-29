@@ -3,6 +3,7 @@ package com.meteorreporter;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.Range;
 
 @ConfigGroup(MeteorReporterConfig.GROUP)
 public interface MeteorReporterConfig extends Config
@@ -31,4 +32,14 @@ public interface MeteorReporterConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(
+		keyName = "minimumTier",
+		name = "Minimum tier",
+		description = "Hides shared reports below this star tier"
+	)
+	@Range(min = 1, max = 9)
+	default int minimumTier()
+	{
+		return 1;
+	}
 }

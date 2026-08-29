@@ -19,9 +19,11 @@ Meteor Reporter is a RuneLite plugin for sharing crashed Shooting Star sightings
 3. Right-click a crashed Shooting Star and choose **Report**.
 4. Open the Meteor Reporter sidebar panel to see active stars reported by other users.
 
+Use **Minimum tier** to hide reports below a tier you care about; the panel says how many are hidden. Reports with no recent update are dimmed.
+
 You can optionally enable **Show my IGN**. If you are the first person to report a meteor, your name and contribution count will appear on its listing. Name sharing is disabled by default.
 
-Reports are refreshed automatically. A completed star is removed when a nearby Meteor Reporter user witnesses its final layer disappear. Old reports also expire automatically.
+Reports are refreshed automatically while the panel is open, and the **Refresh** button fetches them on demand. A completed star is removed when a nearby Meteor Reporter user witnesses its final layer disappear. Old reports also expire automatically.
 
 ## Privacy
 
