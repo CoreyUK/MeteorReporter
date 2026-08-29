@@ -2,6 +2,8 @@
 
 Meteor Reporter is a RuneLite plugin for sharing crashed Shooting Star sightings with other plugin users, and for scouting the stars that have not landed yet using player-owned house telescopes.
 
+Everything shared through the plugin is also on the web at **[meteors.cukservers.net](https://meteors.cukservers.net)** — active stars on a map of Gielinor, upcoming stars from telescope readings, and a leaderboard of the people who share the most. The plugin links to it from the bottom of its panel.
+
 ## Features
 
 - Adds a **Report** option to crashed Shooting Stars.

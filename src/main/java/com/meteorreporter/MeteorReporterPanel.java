@@ -2,9 +2,12 @@ package com.meteorreporter;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Insets;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -26,6 +29,7 @@ import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.ui.components.materialtabs.MaterialTab;
 import net.runelite.client.ui.components.materialtabs.MaterialTabGroup;
+import net.runelite.client.util.LinkBrowser;
 
 class MeteorReporterPanel extends PluginPanel
 {
@@ -33,11 +37,28 @@ class MeteorReporterPanel extends PluginPanel
 	private static final int STALE_MINUTES = 7;
 	private static final int REFRESH_THROTTLE_MS = 5000;
 	private static final String DISABLED = "Shared reports are disabled";
+	private static final String WEBSITE = "https://meteors.cukservers.net";
 	private static final Color GOLD = new Color(255, 190, 45);
 	private static final Color PURPLE = new Color(180, 100, 255);
 	private static final Color BLUE = new Color(80, 155, 255);
 	private static final Color GREEN = new Color(90, 200, 120);
 	private static final Color RED = new Color(255, 85, 85);
+	/**
+	 * One colour per star size, cool for a nearly spent star through to gold for a fresh one.
+	 * The same scale the website uses, so a tier reads the same in both places.
+	 */
+	private static final Color[] TIER_COLORS =
+	{
+		new Color(159, 176, 194),
+		new Color(116, 195, 157),
+		new Color(90, 200, 120),
+		new Color(79, 182, 232),
+		new Color(80, 155, 255),
+		new Color(143, 123, 255),
+		new Color(180, 100, 255),
+		new Color(255, 143, 58),
+		new Color(255, 190, 45)
+	};
 
 	private final JPanel live = new JPanel();
 	private final JPanel scouted = new JPanel();
@@ -97,7 +118,26 @@ class MeteorReporterPanel extends PluginPanel
 		status.setFont(FontManager.getRunescapeSmallFont());
 		status.setForeground(Color.LIGHT_GRAY);
 		status.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
-		add(status, BorderLayout.SOUTH);
+
+		JLabel site = new JLabel("meteors.cukservers.net", SwingConstants.CENTER);
+		site.setFont(FontManager.getRunescapeSmallFont());
+		site.setForeground(GOLD);
+		site.setToolTipText("Open the star map and reporter leaderboard in your browser");
+		site.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		site.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent event)
+			{
+				LinkBrowser.browse(WEBSITE);
+			}
+		});
+
+		JPanel footer = new JPanel(new BorderLayout(0, 2));
+		footer.setOpaque(false);
+		footer.add(status, BorderLayout.NORTH);
+		footer.add(site, BorderLayout.SOUTH);
+		add(footer, BorderLayout.SOUTH);
 
 		tabs.select(liveTab);
 	}
@@ -374,11 +414,7 @@ class MeteorReporterPanel extends PluginPanel
 
 	static Color tierColor(int tier)
 	{
-		if (tier >= 8) return GOLD;
-		if (tier >= 6) return PURPLE;
-		if (tier >= 4) return BLUE;
-		if (tier >= 2) return GREEN;
-		return ColorScheme.LIGHT_GRAY_COLOR;
+		return TIER_COLORS[Math.min(TIER_COLORS.length, Math.max(1, tier)) - 1];
 	}
 
 	static Color rankColor(int reports)
