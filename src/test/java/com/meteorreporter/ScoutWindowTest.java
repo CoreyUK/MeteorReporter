@@ -42,6 +42,6 @@ public class ScoutWindowTest
 	private static String window(long earliestAt, long latestAt)
 	{
 		return MeteorReporterPanel.window(
-			new StarScout(302, "Asgarnia", earliestAt, latestAt, NOW, null, null, 0), NOW);
+			new StarScout(302, "Asgarnia", earliestAt, latestAt, NOW, null, null, 0, 0, 0), NOW);
 	}
 }

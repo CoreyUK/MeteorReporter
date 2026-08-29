@@ -374,7 +374,7 @@ public class MeteorReporterPlugin extends Plugin
 		}
 		StarScout scout = new StarScout(client.getWorld(), hint.getRegion(),
 			now + hint.getEarliestMinutes() * 60_000L, now + hint.getLatestMinutes() * 60_000L,
-			now, contributorId, name, 0);
+			now, contributorId, name, 0, hint.getEarliestMinutes(), hint.getLatestMinutes());
 		log.debug("Submitting scout for world {} region {} in {}-{} minutes", scout.getWorld(), scout.getRegion(),
 			hint.getEarliestMinutes(), hint.getLatestMinutes());
 		reportClient.reportScout(scout, this::refreshScouts,

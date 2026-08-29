@@ -20,4 +20,10 @@ public class StarScout
 	private String reporterId;
 	private String reporterName;
 	private int contributionCount;
+	/**
+	 * Sent so the server can time the window by its own clock instead of trusting ours. Absolute
+	 * times are sent alongside them and are what the server hands back.
+	 */
+	private int earliestMinutes;
+	private int latestMinutes;
 }
