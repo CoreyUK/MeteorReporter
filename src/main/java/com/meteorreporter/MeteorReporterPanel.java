@@ -361,7 +361,8 @@ class MeteorReporterPanel extends PluginPanel
 			JLabel name = new JLabel(escape(reporter));
 			name.setFont(FontManager.getRunescapeSmallFont());
 			name.setForeground(dim ? Color.GRAY : rankColor(contributions));
-			name.setToolTipText(contributions + (contributions == 1 ? " report" : " reports") + " shared");
+			name.setToolTipText(rankName(contributions) + " - "
+				+ contributions + (contributions == 1 ? " find" : " finds") + " shared");
 			credit.add(name);
 			if (contributions > 0)
 			{
@@ -424,6 +425,16 @@ class MeteorReporterPanel extends PluginPanel
 		if (reports >= 50) return BLUE;
 		if (reports >= 20) return RED;
 		return Color.LIGHT_GRAY;
+	}
+
+	/** The same thresholds and names the website's leaderboard uses. */
+	static String rankName(int reports)
+	{
+		if (reports >= 250) return "Legend";
+		if (reports >= 100) return "Master";
+		if (reports >= 50) return "Veteran";
+		if (reports >= 20) return "Scout";
+		return "Reporter";
 	}
 
 	private static long ageMinutes(long timestamp)
