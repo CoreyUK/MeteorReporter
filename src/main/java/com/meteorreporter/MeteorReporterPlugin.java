@@ -117,7 +117,7 @@ public class MeteorReporterPlugin extends Plugin
 		int tier = StarTier.fromObjectId(object.getId());
 		if (tier < 0) return;
 		WorldPoint point = object.getWorldLocation();
-		StarObservation observation = new StarObservation(object, point, tier);
+		StarObservation observation = new StarObservation(point, tier);
 		visibleStars.put(point, observation);
 		pendingCompletion.remove(point);
 		completedHere.remove(point);

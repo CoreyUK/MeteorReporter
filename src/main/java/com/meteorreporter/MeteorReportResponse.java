@@ -8,5 +8,4 @@ import lombok.NoArgsConstructor;
 class MeteorReportResponse
 {
 	private boolean created;
-	private MeteorReport report;
 }

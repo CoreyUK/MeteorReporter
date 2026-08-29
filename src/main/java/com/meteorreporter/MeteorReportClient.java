@@ -21,7 +21,7 @@ import okhttp3.Response;
 @Slf4j
 class MeteorReportClient
 {
-	private static final String API_ENDPOINT = "https://meteors.cukservers.net/api/v1";
+	private static final HttpUrl REPORTS_URL = HttpUrl.get("https://meteors.cukservers.net/api/v1/reports");
 	private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 	private static final Type REPORT_LIST = new TypeToken<List<MeteorReport>>() { }.getType();
 	private final OkHttpClient httpClient;
@@ -36,13 +36,7 @@ class MeteorReportClient
 
 	void list(Consumer<List<MeteorReport>> success, Consumer<String> failure)
 	{
-		HttpUrl url = reportsUrl();
-		if (url == null)
-		{
-			failure.accept("Invalid API URL");
-			return;
-		}
-		httpClient.newCall(requestBuilder(url).get().build()).enqueue(new Callback()
+		httpClient.newCall(new Request.Builder().url(REPORTS_URL).get().build()).enqueue(new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException exception)
@@ -75,13 +69,8 @@ class MeteorReportClient
 
 	void report(MeteorReport report, Consumer<MeteorReportResponse> success, Consumer<String> failure)
 	{
-		HttpUrl url = reportsUrl();
-		if (url == null)
-		{
-			failure.accept("Invalid API URL");
-			return;
-		}
-		Request request = requestBuilder(url).post(RequestBody.create(JSON, gson.toJson(report))).build();
+		Request request = new Request.Builder().url(REPORTS_URL)
+			.post(RequestBody.create(JSON, gson.toJson(report))).build();
 		httpClient.newCall(request).enqueue(new Callback()
 		{
 			@Override
@@ -113,19 +102,13 @@ class MeteorReportClient
 
 	void delete(MeteorReport report, Runnable success, Consumer<String> failure)
 	{
-		HttpUrl base = reportsUrl();
-		if (base == null)
-		{
-			failure.accept("Invalid API URL");
-			return;
-		}
-		HttpUrl url = base.newBuilder()
+		HttpUrl url = REPORTS_URL.newBuilder()
 			.addPathSegment(Integer.toString(report.getWorld()))
 			.addPathSegment(Integer.toString(report.getX()))
 			.addPathSegment(Integer.toString(report.getY()))
 			.addPathSegment(Integer.toString(report.getPlane()))
 			.build();
-		execute(requestBuilder(url).delete().build(), success, failure);
+		execute(new Request.Builder().url(url).delete().build(), success, failure);
 	}
 
 	private void execute(Request request, Runnable success, Consumer<String> failure)
@@ -151,13 +134,4 @@ class MeteorReportClient
 		});
 	}
 
-	private Request.Builder requestBuilder(HttpUrl url)
-	{
-		return new Request.Builder().url(url);
-	}
-
-	private HttpUrl reportsUrl()
-	{
-		return HttpUrl.parse(API_ENDPOINT + "/reports");
-	}
 }
