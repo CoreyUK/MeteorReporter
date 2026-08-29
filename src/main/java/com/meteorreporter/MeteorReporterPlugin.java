@@ -28,6 +28,7 @@ import net.runelite.api.TileObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameObjectDespawned;
 import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GameStateChanged;
@@ -60,6 +61,7 @@ public class MeteorReporterPlugin extends Plugin
 {
 	private static final int REFRESH_SECONDS = 30;
 	private static final int TIER_CHECK_TICKS = 5;
+	private static final long SCOUT_REPOST_MILLIS = 60_000L;
 	@Inject private Client client;
 	@Inject private ClientThread clientThread;
 	@Inject private MeteorReporterConfig config;
@@ -75,6 +77,10 @@ public class MeteorReporterPlugin extends Plugin
 	private final Set<WorldPoint> completedHere = new HashSet<>();
 	private final Set<String> activeReportKeys = ConcurrentHashMap.newKeySet();
 	private final AtomicBoolean refreshInFlight = new AtomicBoolean();
+	private final AtomicBoolean scoutRefreshInFlight = new AtomicBoolean();
+	private volatile boolean scoutsUnavailable;
+	private String lastScoutKey;
+	private long lastScoutAt;
 	private volatile int currentWorld;
 	private volatile boolean panelActive;
 	private MeteorReporterPanel panel;
@@ -112,6 +118,9 @@ public class MeteorReporterPlugin extends Plugin
 		completedHere.clear();
 		activeReportKeys.clear();
 		refreshInFlight.set(false);
+		scoutRefreshInFlight.set(false);
+		scoutsUnavailable = false;
+		lastScoutKey = null;
 		currentWorld = 0;
 		hopTarget = null;
 		if (navigationButton != null) clientToolbar.removeNavigation(navigationButton);
@@ -226,6 +235,28 @@ public class MeteorReporterPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		if (!config.sharingEnabled() || !config.shareTelescope()) return;
+		ChatMessageType type = event.getType();
+		if (type != ChatMessageType.GAMEMESSAGE && type != ChatMessageType.SPAM
+			&& type != ChatMessageType.MESBOX && type != ChatMessageType.DIALOG)
+		{
+			return;
+		}
+		TelescopeHint hint = TelescopeHint.parse(event.getMessage());
+		if (hint == null)
+		{
+			if (event.getMessage() != null && event.getMessage().toLowerCase().contains("telescope"))
+			{
+				log.debug("Unparsed telescope message: {}", event.getMessage());
+			}
+			return;
+		}
+		sendScout(hint);
+	}
+
+	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
 		if (MeteorReporterConfig.GROUP.equals(event.getGroup())) restartRefreshTask();
@@ -314,6 +345,30 @@ public class MeteorReporterPlugin extends Plugin
 		});
 	}
 
+	private void sendScout(TelescopeHint hint)
+	{
+		long now = Instant.now().toEpochMilli();
+		String key = client.getWorld() + ":" + hint.getRegion() + ":" + hint.getEarliestMinutes();
+		// Looking through the telescope repeatedly should not repost the same reading.
+		if (key.equals(lastScoutKey) && now - lastScoutAt < SCOUT_REPOST_MILLIS) return;
+		lastScoutKey = key;
+		lastScoutAt = now;
+		String name = null;
+		String contributorId = null;
+		if (config.showReporterName() && client.getLocalPlayer() != null)
+		{
+			name = client.getLocalPlayer().getName();
+			contributorId = reporterId();
+		}
+		StarScout scout = new StarScout(client.getWorld(), hint.getRegion(),
+			now + hint.getEarliestMinutes() * 60_000L, now + hint.getLatestMinutes() * 60_000L,
+			now, contributorId, name, 0);
+		log.debug("Submitting scout for world {} region {} in {}-{} minutes", scout.getWorld(), scout.getRegion(),
+			hint.getEarliestMinutes(), hint.getLatestMinutes());
+		reportClient.reportScout(scout, this::refreshScouts,
+			error -> log.debug("Unable to share telescope reading: {}", error));
+	}
+
 	private MeteorReport createReport(WorldPoint point, int tier)
 	{
 		String name = null;
@@ -388,6 +443,29 @@ public class MeteorReporterPlugin extends Plugin
 			{
 				refreshInFlight.set(false);
 				SwingUtilities.invokeLater(() -> { if (panel != null) panel.setError(error); });
+			});
+		refreshScouts();
+	}
+
+	private void refreshScouts()
+	{
+		if (!config.sharingEnabled() || panel == null || scoutsUnavailable) return;
+		if (!scoutRefreshInFlight.compareAndSet(false, true)) return;
+		int world = currentWorld;
+		reportClient.listScouts(
+			scouts ->
+			{
+				scoutRefreshInFlight.set(false);
+				SwingUtilities.invokeLater(() -> { if (panel != null) panel.setScouts(scouts, world); });
+			},
+			(error, code) ->
+			{
+				scoutRefreshInFlight.set(false);
+				// A server without the scouting endpoint should not be asked again every cycle.
+				boolean missing = code == 404 || code == 501;
+				if (missing) scoutsUnavailable = true;
+				String message = missing ? "Scouted stars are not available yet" : error;
+				SwingUtilities.invokeLater(() -> { if (panel != null) panel.setScoutError(message); });
 			});
 	}
 

@@ -7,6 +7,7 @@ import java.lang.reflect.Type;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.ObjIntConsumer;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.Call;
@@ -21,9 +22,12 @@ import okhttp3.Response;
 @Slf4j
 class MeteorReportClient
 {
-	private static final HttpUrl REPORTS_URL = HttpUrl.get("https://meteors.cukservers.net/api/v1/reports");
+	private static final HttpUrl API_URL = HttpUrl.get("https://meteors.cukservers.net/api/v1");
+	private static final HttpUrl REPORTS_URL = API_URL.newBuilder().addPathSegment("reports").build();
+	private static final HttpUrl SCOUTS_URL = API_URL.newBuilder().addPathSegment("scouts").build();
 	private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 	private static final Type REPORT_LIST = new TypeToken<List<MeteorReport>>() { }.getType();
+	private static final Type SCOUT_LIST = new TypeToken<List<StarScout>>() { }.getType();
 	private final OkHttpClient httpClient;
 	private final Gson gson;
 
@@ -65,6 +69,46 @@ class MeteorReportClient
 				}
 			}
 		});
+	}
+
+	void listScouts(Consumer<List<StarScout>> success, ObjIntConsumer<String> failure)
+	{
+		httpClient.newCall(new Request.Builder().url(SCOUTS_URL).get().build()).enqueue(new Callback()
+		{
+			@Override
+			public void onFailure(Call call, IOException exception)
+			{
+				log.debug("Unable to refresh scouted stars", exception);
+				failure.accept("Report server unavailable", -1);
+			}
+
+			@Override
+			public void onResponse(Call call, Response response)
+			{
+				try (Response closeable = response)
+				{
+					if (!response.isSuccessful() || response.body() == null)
+					{
+						failure.accept("Report server returned " + response.code(), response.code());
+						return;
+					}
+					List<StarScout> scouts = gson.fromJson(response.body().charStream(), SCOUT_LIST);
+					success.accept(scouts == null ? Collections.emptyList() : scouts);
+				}
+				catch (RuntimeException exception)
+				{
+					log.debug("Invalid scouted star response", exception);
+					failure.accept("Invalid report response", -1);
+				}
+			}
+		});
+	}
+
+	void reportScout(StarScout scout, Runnable success, Consumer<String> failure)
+	{
+		Request request = new Request.Builder().url(SCOUTS_URL)
+			.post(RequestBody.create(JSON, gson.toJson(scout))).build();
+		execute(request, success, failure);
 	}
 
 	void report(MeteorReport report, Consumer<MeteorReportResponse> success, Consumer<String> failure)

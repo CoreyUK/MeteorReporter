@@ -33,6 +33,17 @@ public interface MeteorReporterConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "shareTelescope",
+		name = "Share telescope readings",
+		description = "Shares the region and time window your house telescope reports for your current world",
+		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers"
+	)
+	default boolean shareTelescope()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "minimumTier",
 		name = "Minimum tier",
 		description = "Hides shared reports below this star tier"
