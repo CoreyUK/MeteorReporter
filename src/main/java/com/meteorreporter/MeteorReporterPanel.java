@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.function.IntConsumer;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -64,7 +63,6 @@ class MeteorReporterPanel extends PluginPanel
 	private final JPanel scouted = new JPanel();
 	private final JLabel status = new JLabel(DISABLED, SwingConstants.CENTER);
 	private final JButton refresh = new JButton("Refresh");
-	private final IntConsumer hopHandler;
 	private final Runnable refreshHandler;
 	private final Consumer<Boolean> activeHandler;
 	private final MaterialTab liveTab;
@@ -73,9 +71,8 @@ class MeteorReporterPanel extends PluginPanel
 	private String scoutedStatus = "No scouted stars";
 	private boolean showingReports;
 
-	MeteorReporterPanel(IntConsumer hopHandler, Runnable refreshHandler, Consumer<Boolean> activeHandler)
+	MeteorReporterPanel(Runnable refreshHandler, Consumer<Boolean> activeHandler)
 	{
-		this.hopHandler = hopHandler;
 		this.refreshHandler = refreshHandler;
 		this.activeHandler = activeHandler;
 		setLayout(new BorderLayout(0, 8));
@@ -349,7 +346,10 @@ class MeteorReporterPanel extends PluginPanel
 		worldLabel.setForeground(dim ? ColorScheme.LIGHT_GRAY_COLOR : Color.WHITE);
 		header.add(worldLabel, BorderLayout.WEST);
 		header.add(detail, BorderLayout.CENTER);
-		header.add(worldAction(world, currentWorld > 0 && currentWorld == world), BorderLayout.EAST);
+		if (currentWorld > 0 && currentWorld == world)
+		{
+			header.add(currentWorldLabel(), BorderLayout.EAST);
+		}
 
 		JPanel footer = new JPanel(new BorderLayout(6, 0));
 		footer.setOpaque(false);
@@ -384,24 +384,13 @@ class MeteorReporterPanel extends PluginPanel
 		return card;
 	}
 
-	private JComponent worldAction(int world, boolean here)
+	private JComponent currentWorldLabel()
 	{
-		if (here)
-		{
-			JLabel current = new JLabel("Here");
-			current.setFont(FontManager.getRunescapeSmallFont());
-			current.setForeground(GREEN);
-			current.setToolTipText("You are on this world");
-			return current;
-		}
-		JButton hop = new JButton("Hop");
-		hop.setFont(FontManager.getRunescapeSmallFont());
-		hop.setToolTipText("Hop to world " + world);
-		hop.setFocusable(false);
-		hop.setMargin(new Insets(0, 0, 0, 0));
-		hop.setPreferredSize(new Dimension(42, 18));
-		hop.addActionListener(event -> hopHandler.accept(world));
-		return hop;
+		JLabel current = new JLabel("Here");
+		current.setFont(FontManager.getRunescapeSmallFont());
+		current.setForeground(GREEN);
+		current.setToolTipText("You are on this world");
+		return current;
 	}
 
 	static String window(StarScout scout, long now)

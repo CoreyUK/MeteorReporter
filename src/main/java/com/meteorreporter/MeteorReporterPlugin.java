@@ -34,22 +34,15 @@ import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuEntryAdded;
-import net.runelite.api.gameval.InterfaceID;
-import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
-import net.runelite.client.game.WorldService;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
-import net.runelite.client.util.WorldUtil;
-import net.runelite.http.api.worlds.World;
-import net.runelite.http.api.worlds.WorldResult;
-import net.runelite.http.api.worlds.WorldType;
 
 @Slf4j
 @PluginDescriptor(
@@ -69,7 +62,6 @@ public class MeteorReporterPlugin extends Plugin
 	@Inject private ClientToolbar clientToolbar;
 	@Inject private ScheduledExecutorService executor;
 	@Inject private ConfigManager configManager;
-	@Inject private WorldService worldService;
 
 	private final Map<WorldPoint, StarObservation> visibleStars = new HashMap<>();
 	private final Set<WorldPoint> pendingCompletion = new HashSet<>();
@@ -86,14 +78,12 @@ public class MeteorReporterPlugin extends Plugin
 	private MeteorReporterPanel panel;
 	private NavigationButton navigationButton;
 	private ScheduledFuture<?> refreshTask;
-	private net.runelite.api.World hopTarget;
-	private int hopAttempts;
 	private int tierCheckTicks;
 
 	@Override
 	protected void startUp()
 	{
-		panel = new MeteorReporterPanel(this::hopToWorld, this::requestRefresh, this::setPanelActive);
+		panel = new MeteorReporterPanel(this::requestRefresh, this::setPanelActive);
 		navigationButton = NavigationButton.builder()
 			.tooltip("Meteor Reporter")
 			.icon(createIcon())
@@ -122,7 +112,6 @@ public class MeteorReporterPlugin extends Plugin
 		scoutsUnavailable = false;
 		lastScoutKey = null;
 		currentWorld = 0;
-		hopTarget = null;
 		if (navigationButton != null) clientToolbar.removeNavigation(navigationButton);
 		panel = null;
 		navigationButton = null;
@@ -183,25 +172,6 @@ public class MeteorReporterPlugin extends Plugin
 		{
 			tierCheckTicks = 0;
 			verifyStarTiers();
-		}
-		if (hopTarget != null)
-		{
-			if (client.getWidget(InterfaceID.Worldswitcher.BUTTONS) == null)
-			{
-				client.openWorldHopper();
-				if (++hopAttempts >= 3)
-				{
-					hopTarget = null;
-					hopAttempts = 0;
-					gameMessage("Meteor Reporter could not open the world hopper.");
-				}
-			}
-			else
-			{
-				client.hopToWorld(hopTarget);
-				hopTarget = null;
-				hopAttempts = 0;
-			}
 		}
 	}
 
@@ -516,11 +486,6 @@ public class MeteorReporterPlugin extends Plugin
 		return created;
 	}
 
-	private void gameMessage(String message)
-	{
-		client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", message, null);
-	}
-
 	private static String reportKey(int world, WorldPoint point)
 	{
 		return reportKey(world, point.getX(), point.getY(), point.getPlane());
@@ -544,39 +509,6 @@ public class MeteorReporterPlugin extends Plugin
 	private static BufferedImage createIcon()
 	{
 		return ImageUtil.loadImageResource(MeteorReporterPlugin.class, "meteor.png");
-	}
-
-	private void hopToWorld(int worldId)
-	{
-		WorldResult result = worldService.getWorlds();
-		World target = result == null ? null : result.findWorld(worldId);
-		if (target == null || target.getPlayers() < 0 || target.getPlayers() >= 1950) return;
-		clientThread.invoke(() ->
-		{
-			// Game state and the current world can only be read on the client thread.
-			if (client.getGameState() != GameState.LOGGED_IN || client.getWorld() == worldId) return;
-			World current = result.findWorld(client.getWorld());
-			if (current != null && !current.getTypes().contains(WorldType.PVP) && target.getTypes().contains(WorldType.PVP))
-			{
-				gameMessage("Meteor Reporter will not hop you into PvP world " + worldId + ".");
-				return;
-			}
-			// ACCOUNT_CREDIT holds the days of membership left, so zero means a free account.
-			if (target.getTypes().contains(WorldType.MEMBERS) && client.getVarpValue(VarPlayerID.ACCOUNT_CREDIT) <= 0)
-			{
-				gameMessage("World " + worldId + " is members only.");
-				return;
-			}
-			net.runelite.api.World apiWorld = client.createWorld();
-			apiWorld.setActivity(target.getActivity());
-			apiWorld.setAddress(target.getAddress());
-			apiWorld.setId(target.getId());
-			apiWorld.setPlayerCount(target.getPlayers());
-			apiWorld.setLocation(target.getLocation());
-			apiWorld.setTypes(WorldUtil.toWorldTypes(target.getTypes()));
-			hopTarget = apiWorld;
-			hopAttempts = 0;
-		});
 	}
 
 	@Provides
