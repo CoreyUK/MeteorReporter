@@ -36,7 +36,7 @@ class MeteorReporterPanel extends PluginPanel
 	private static final int STALE_MINUTES = 7;
 	private static final int REFRESH_THROTTLE_MS = 5000;
 	private static final String DISABLED = "Shared reports are disabled";
-	private static final String WEBSITE = "https://meteors.cukservers.net";
+	private static final String WEBSITE = "https://meteor.shep.rip";
 	private static final Color GOLD = new Color(255, 190, 45);
 	private static final Color PURPLE = new Color(180, 100, 255);
 	private static final Color BLUE = new Color(80, 155, 255);
@@ -116,7 +116,7 @@ class MeteorReporterPanel extends PluginPanel
 		status.setForeground(Color.LIGHT_GRAY);
 		status.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 
-		JLabel site = new JLabel("meteors.cukservers.net", SwingConstants.CENTER);
+		JLabel site = new JLabel("meteor.shep.rip", SwingConstants.CENTER);
 		site.setFont(FontManager.getRunescapeSmallFont());
 		site.setForeground(GOLD);
 		site.setToolTipText("Open the star map and reporter leaderboard in your browser");

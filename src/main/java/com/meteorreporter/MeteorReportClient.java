@@ -22,7 +22,7 @@ import okhttp3.Response;
 @Slf4j
 class MeteorReportClient
 {
-	private static final HttpUrl API_URL = HttpUrl.get("https://meteors.cukservers.net/api/v1");
+	private static final HttpUrl API_URL = HttpUrl.get("https://meteor.shep.rip/api/v1");
 	private static final HttpUrl REPORTS_URL = API_URL.newBuilder().addPathSegment("reports").build();
 	private static final HttpUrl SCOUTS_URL = API_URL.newBuilder().addPathSegment("scouts").build();
 	private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
