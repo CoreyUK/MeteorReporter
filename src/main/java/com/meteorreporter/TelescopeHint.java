@@ -1,7 +1,5 @@
 package com.meteorreporter;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.Getter;
@@ -52,14 +50,16 @@ final class TelescopeHint
 		"Kebos"
 	};
 
-	private static final Pattern DURATION = Pattern.compile("(\\d{1,3})\\s*(hours?|hrs?|minutes?|mins?)",
+	/** A number and, when it has one, its unit. "32 to 56 minutes" gives the 32 no unit at all. */
+	private static final Pattern NUMBER = Pattern.compile("(\\d{1,3})\\s*(hours?|hrs?|minutes?|mins?)?",
 		Pattern.CASE_INSENSITIVE);
 	/**
-	 * "between 5 and 14 minutes", "5-14 minutes", "5 to 14 minutes". The first number carries no
-	 * unit of its own, so it is invisible to {@link #DURATION}.
+	 * What separates the two ends of a window: "32 to 56", "5-14", "between 5 and 14". A bare "and"
+	 * is not one, because "1 hour and 20 minutes" is a single duration.
 	 */
-	private static final Pattern RANGE = Pattern.compile(
-		"(\\d{1,3})\\s*(?:-|–|to|and)\\s*(\\d{1,3})\\s*(?:minutes?|mins?)", Pattern.CASE_INSENSITIVE);
+	private static final Pattern SEPARATOR = Pattern.compile("\\s*(?:\\bto\\b|-|–)\\s*", Pattern.CASE_INSENSITIVE);
+	private static final Pattern BETWEEN = Pattern.compile("\\bbetween\\s+(\\d{1,3}(?:\\s*(?:hours?|hrs?))?(?:\\s*\\d{1,3})?)\\s+and\\s+",
+		Pattern.CASE_INSENSITIVE);
 	private static final Pattern MARKUP = Pattern.compile("<[^>]*>");
 
 	private final String region;
@@ -91,7 +91,8 @@ final class TelescopeHint
 
 	private static String findRegion(String text)
 	{
-		String lower = text.toLowerCase();
+		// The game says "Piscatoris or the Gnome Stronghold"; the paired names are listed with "and".
+		String lower = text.toLowerCase().replace(" or the ", " and the ").replace(" or ", " and ");
 		for (String region : REGIONS)
 		{
 			if (lower.contains(region.toLowerCase())) return region;
@@ -99,55 +100,105 @@ final class TelescopeHint
 		return null;
 	}
 
+	/**
+	 * The window is the part of the text from its first number onward, split once at "to" (or a
+	 * dash, or the "and" of "between X and Y") into an earliest and a latest side. Each side is a
+	 * duration of its own: hours and minutes are added, and a bare number takes its unit from the
+	 * other side, so "32 to 56 minutes" reads as 32 minutes to 56 minutes. A side with no hours
+	 * that comes out earlier than the side before it shares that side's hour, so "1 hour 28 to 52
+	 * minutes" reads as 1:28 to 1:52. No separator means one duration, and a window of no width.
+	 */
 	private static TelescopeHint window(String region, String text)
 	{
-		Matcher range = RANGE.matcher(text);
-		if (range.find())
+		String clause = BETWEEN.matcher(text).replaceFirst("$1 to ");
+		Matcher first = NUMBER.matcher(clause);
+		if (!first.find()) return null;
+		clause = clause.substring(first.start());
+		String[] sides = SEPARATOR.split(clause, 2);
+		Duration earliest = Duration.read(sides[0]);
+		if (earliest == null) return null;
+		if (sides.length == 1) return new TelescopeHint(region, earliest.total(), earliest.total());
+		Duration latest = Duration.read(sides[1]);
+		if (latest == null) return new TelescopeHint(region, earliest.total(), earliest.total());
+		Duration.borrowUnits(earliest, latest);
+		int a = earliest.total();
+		int b = latest.total();
+		return new TelescopeHint(region, Math.min(a, b), Math.max(a, b));
+	}
+
+	/** One side of a window: "1 hour 28 minutes", "56 minutes", or a bare "32". */
+	private static final class Duration
+	{
+		private int hours = -1;
+		private int minutes = -1;
+		private int bare = -1;
+
+		/** @return the duration, or null when the side holds no number at all. */
+		static Duration read(String side)
 		{
-			try
+			Duration duration = new Duration();
+			Matcher matcher = NUMBER.matcher(side);
+			while (matcher.find())
 			{
-				int first = Integer.parseInt(range.group(1));
-				int second = Integer.parseInt(range.group(2));
-				return new TelescopeHint(region, Math.min(first, second), Math.max(first, second));
+				int value;
+				try
+				{
+					value = Integer.parseInt(matcher.group(1));
+				}
+				catch (NumberFormatException ignored)
+				{
+					continue;
+				}
+				String unit = matcher.group(2) == null ? "" : matcher.group(2).toLowerCase();
+				if (unit.startsWith("h"))
+				{
+					duration.hours = value;
+				}
+				else if (unit.startsWith("m"))
+				{
+					// Minutes always close a duration; whatever follows is not part of this side.
+					duration.minutes = value;
+					break;
+				}
+				else if (duration.bare < 0)
+				{
+					duration.bare = value;
+				}
+				else
+				{
+					// A second unitless number is something else entirely - a world, a price.
+					break;
+				}
 			}
-			catch (NumberFormatException ignored)
+			return duration.hours < 0 && duration.minutes < 0 && duration.bare < 0 ? null : duration;
+		}
+
+		/**
+		 * A bare number on one side takes the unit its partner spelt out: in "32 to 56 minutes" the
+		 * 32 is minutes, in "1 to 2 hours" the 1 is hours. Then a side without an hour that reads
+		 * earlier than the side it follows is missing that hour, as in "1 hour 28 to 52 minutes".
+		 */
+		static void borrowUnits(Duration earliest, Duration latest)
+		{
+			for (Duration side : new Duration[]{earliest, latest})
 			{
-				// Fall through to the single durations below.
+				Duration other = side == earliest ? latest : earliest;
+				if (side.bare < 0) continue;
+				// A side that already has minutes but sits after an hour, "1 hour 28", is 28 minutes.
+				if (side.hours >= 0 && side.minutes < 0) side.minutes = side.bare;
+				else if (other.minutes >= 0 || other.hours < 0) side.minutes = side.bare;
+				else side.hours = side.bare;
+				side.bare = -1;
+			}
+			if (latest.hours < 0 && earliest.hours > 0 && latest.total() < earliest.total())
+			{
+				latest.hours = earliest.hours;
 			}
 		}
-		List<Integer> minutes = new ArrayList<>();
-		boolean hours = false;
-		Matcher matcher = DURATION.matcher(text);
-		while (matcher.find())
+
+		int total()
 		{
-			int value;
-			try
-			{
-				value = Integer.parseInt(matcher.group(1));
-			}
-			catch (NumberFormatException ignored)
-			{
-				continue;
-			}
-			boolean hour = matcher.group(2).toLowerCase().startsWith("h");
-			hours |= hour;
-			minutes.add(hour ? value * 60 : value);
+			return Math.max(0, hours) * 60 + Math.max(0, minutes);
 		}
-		if (minutes.isEmpty()) return null;
-		if (hours)
-		{
-			// "1 hour and 20 minutes" is one duration split across two numbers, not a range.
-			int total = 0;
-			for (int value : minutes) total += value;
-			return new TelescopeHint(region, total, total);
-		}
-		int earliest = minutes.get(0);
-		int latest = earliest;
-		for (int value : minutes)
-		{
-			earliest = Math.min(earliest, value);
-			latest = Math.max(latest, value);
-		}
-		return new TelescopeHint(region, earliest, latest);
 	}
 }

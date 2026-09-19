@@ -232,6 +232,8 @@ public class MeteorReporterPlugin extends Plugin
 			}
 			return;
 		}
+		// The wording is what the parser is built on, so keep the raw text on record.
+		log.debug("Telescope message: {}", event.getMessage());
 		sendScout(hint);
 	}
 
