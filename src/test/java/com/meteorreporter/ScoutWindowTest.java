@@ -34,9 +34,10 @@ public class ScoutWindowTest
 	}
 
 	@Test
-	public void marksAPassedWindowOverdue()
+	public void saysLandedOnceTheWindowHasPassed()
 	{
-		assertEquals("overdue", window(NOW - 10 * MINUTE, NOW - MINUTE));
+		assertEquals("landed 1m ago", window(NOW - 10 * MINUTE, NOW - MINUTE));
+		assertEquals("landed 1h 2m ago", window(NOW - 90 * MINUTE, NOW - 62 * MINUTE));
 	}
 
 	private static String window(long earliestAt, long latestAt)

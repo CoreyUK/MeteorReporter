@@ -309,23 +309,30 @@ class MeteorReporterPanel extends PluginPanel
 	{
 		long now = Instant.now().toEpochMilli();
 		boolean due = scout.getEarliestAt() <= now;
-		boolean expired = scout.getLatestAt() < now;
-		Color accent = expired ? Color.GRAY : (due ? GOLD : GREEN);
+		// Past its window the star is down, not gone - nobody has reported it yet. The server
+		// drops it once someone does, or once it could no longer be standing.
+		boolean landed = scout.getLatestAt() < now;
+		Color accent = due ? GOLD : GREEN;
 
 		JLabel window = new JLabel(window(scout, now));
 		window.setFont(FontManager.getRunescapeSmallFont());
 		window.setForeground(accent);
+		if (landed)
+		{
+			window.setToolTipText("Down somewhere in this region, not reported yet - hop over and look");
+		}
 
 		JLabel region = new JLabel("<html><div width=" + SPOT_WRAP_WIDTH + ">"
-			+ escape(scout.getRegion() == null ? "Unknown region" : scout.getRegion()) + "</div></html>");
-		region.setForeground(expired ? Color.GRAY : ColorScheme.LIGHT_GRAY_COLOR);
+			+ escape(scout.getRegion() == null ? "Unknown region" : scout.getRegion())
+			+ (landed ? " <font color='#808080'>· unreported</font>" : "") + "</div></html>");
+		region.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 
 		JLabel age = new JLabel(age(ageMinutes(scout.getUpdatedAt())));
 		age.setFont(FontManager.getRunescapeSmallFont());
 		age.setForeground(Color.GRAY);
 		age.setToolTipText("When this telescope reading was shared");
 
-		return card(scout.getWorld(), currentWorld, accent, expired, window, region, age,
+		return card(scout.getWorld(), currentWorld, accent, false, window, region, age,
 			scout.getReporterName(), scout.getContributionCount());
 	}
 
@@ -396,7 +403,7 @@ class MeteorReporterPanel extends PluginPanel
 	static String window(StarScout scout, long now)
 	{
 		long latest = Math.round((scout.getLatestAt() - now) / 60000d);
-		if (latest < 0) return "overdue";
+		if (latest < 0) return "landed " + age(-latest);
 		long earliest = Math.round((scout.getEarliestAt() - now) / 60000d);
 		if (earliest <= 0) return latest == 0 ? "due now" : "due within " + latest + "m";
 		return earliest == latest ? "in ~" + earliest + "m" : "in " + earliest + "-" + latest + "m";
