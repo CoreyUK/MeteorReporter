@@ -22,9 +22,20 @@ public interface MeteorReporterConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "autoReport",
+		name = "Report stars automatically",
+		description = "Shares a crashed star the moment you see one, without using the Report option",
+		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers"
+	)
+	default boolean autoReport()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "showReporterName",
 		name = "Show my IGN",
-		description = "Shows your RuneScape name on meteor reports",
+		description = "Shows your RuneScape name on the stars and telescope readings you share, and ranks you on the contributor leaderboard. With automatic reporting on, this publishes where you are whenever you pass a star",
 		warning = "This sends your RuneScape name, meteor report data, and IP address to a 3rd-party server not controlled or verified by RuneLite developers"
 	)
 	default boolean showReporterName()

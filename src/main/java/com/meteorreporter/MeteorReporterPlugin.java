@@ -129,7 +129,19 @@ public class MeteorReporterPlugin extends Plugin
 		visibleStars.put(point, observation);
 		pendingCompletion.remove(point);
 		completedHere.remove(point);
-		if (reportedHere.contains(point) && config.sharingEnabled()) sendReport(observation, false);
+		if (!config.sharingEnabled()) return;
+		if (reportedHere.contains(point))
+		{
+			sendReport(observation, false);
+			return;
+		}
+		// A star nobody has shared yet. Sending it needs no game action - it is the same HTTP post
+		// the Report option makes, so the player is told about it the same way.
+		if (config.autoReport() && client.getGameState() == GameState.LOGGED_IN
+			&& !activeReportKeys.contains(reportKey(client.getWorld(), point)))
+		{
+			sendReport(observation, true);
+		}
 	}
 
 	@Subscribe
