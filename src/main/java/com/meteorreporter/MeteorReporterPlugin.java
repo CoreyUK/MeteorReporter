@@ -92,7 +92,11 @@ public class MeteorReporterPlugin extends Plugin
 			.build();
 		clientToolbar.addNavigation(navigationButton);
 		// Enabling the plugin mid-session doesn't fire a game state change, so seed the world here.
-		clientThread.invoke(() -> currentWorld = client.getGameState() == GameState.LOGGED_IN ? client.getWorld() : 0);
+		clientThread.invoke(() ->
+		{
+			currentWorld = client.getGameState() == GameState.LOGGED_IN ? client.getWorld() : 0;
+			scanScene();
+		});
 		restartRefreshTask();
 		log.debug("Meteor Reporter started");
 	}
@@ -124,8 +128,13 @@ public class MeteorReporterPlugin extends Plugin
 		GameObject object = event.getGameObject();
 		int tier = StarTier.fromObjectId(object.getId());
 		if (tier < 0) return;
-		WorldPoint point = object.getWorldLocation();
-		StarObservation observation = new StarObservation(point, tier);
+		noticeStar(new StarObservation(object.getWorldLocation(), tier));
+	}
+
+	/** Takes a star the plugin has just become aware of, however it was found. */
+	private void noticeStar(StarObservation observation)
+	{
+		WorldPoint point = observation.getWorldPoint();
 		visibleStars.put(point, observation);
 		pendingCompletion.remove(point);
 		completedHere.remove(point);
@@ -141,6 +150,42 @@ public class MeteorReporterPlugin extends Plugin
 			&& !activeReportKeys.contains(reportKey(client.getWorld(), point)))
 		{
 			sendReport(observation, true);
+		}
+	}
+
+	/**
+	 * A star already standing in the scene fires no spawn event, so enabling the plugin or turning
+	 * sharing on while beside one would leave it invisible - no Report option, and nothing for
+	 * automatic reporting to send - until it shrank or the scene reloaded. Sweep the scene once at
+	 * those two moments instead. This is not tick work: it runs on the client thread, only when the
+	 * plugin starts or a sharing setting changes.
+	 */
+	private void scanScene()
+	{
+		if (client.getGameState() != GameState.LOGGED_IN) return;
+		WorldView worldView = client.getTopLevelWorldView();
+		if (worldView == null) return;
+		Tile[][][] tiles = worldView.getScene().getTiles();
+		for (Tile[][] plane : tiles)
+		{
+			for (Tile[] column : plane)
+			{
+				for (Tile tile : column)
+				{
+					if (tile == null) continue;
+					for (GameObject object : tile.getGameObjects())
+					{
+						if (object == null) continue;
+						int tier = StarTier.fromObjectId(object.getId());
+						if (tier < 0) continue;
+						// A star covers several tiles and is listed on each of them.
+						WorldPoint point = object.getWorldLocation();
+						if (visibleStars.containsKey(point)) continue;
+						log.debug("Found a tier {} star already in the scene at {}", tier, point);
+						noticeStar(new StarObservation(point, tier));
+					}
+				}
+			}
 		}
 	}
 
@@ -256,6 +301,11 @@ public class MeteorReporterPlugin extends Plugin
 		// Give a server that has since gained the scouting endpoint another chance.
 		scoutsUnavailable = false;
 		restartRefreshTask();
+		// Turning sharing on next to a star should find it, not wait for the scene to reload.
+		if ("sharingEnabled".equals(event.getKey()) || "autoReport".equals(event.getKey()))
+		{
+			clientThread.invoke(this::scanScene);
+		}
 	}
 
 	/**
